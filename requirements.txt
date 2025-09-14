@@ -1,0 +1,7 @@
+# Python dependencies for StatesFlowWishes · Z3r0CL0cK · sH1FTSyNc
+# No external dependencies required - uses only Python standard library
+
+# For development and testing (optional)
+# pytest>=7.0.0  # Alternative test runner
+# black>=22.0.0  # Code formatter
+# mypy>=0.900    # Type checking
