@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0ff" />
+<title>Matrix · Waben · Kristalle · Hnoss — POWER (Hybrid Start + Tests · last-fix)</title>
+<style>
+  :root{
+    --bg:#000;
+    --neon-cyan:#00f0ff;
+    --neon-pink:#ff4da6;
+    --gold:#ffd700;
+    --gold-warm:#ffb300;
+    --mint:#9fffff;
+  }
+  html, body { margin:0; padding:0; height:100%; background:var(--bg); overflow:hidden; }
+  #stage { position:relative; width:100vw; height:100vh; background:#000; }
+  canvas.layer { position:absolute; inset:0; display:block; width:100%; height:100%; }
+  #stars  { z-index: 1; }
+  #matrix { z-index: 2; filter: drop-shadow(0 0 6px rgba(0,255,180,.35)); }
+  #fx     { z-index: 3; }
+  #shapes { position:absolute; inset:0; z-index:4; pointer-events:none; }
+  .abs { position:absolute; will-change:transform, opacity, filter; }
+  .hex polygon, .crystal rect, .crystal line { vector-effect:non-scaling-stroke; }
+  .hex polygon { fill:none; stroke:var(--neon-cyan); stroke-width:2; opacity:.85; filter: drop-shadow(0 0 8px rgba(0,255,255,.6)); mix-blend-mode:screen; }
+  .crystal rect, .crystal line { stroke:var(--mint); fill:none; stroke-width:1.25; opacity:.8; mix-blend-mode:screen; }
+  #hnoss {
+    position:absolute;
+    font: 800 clamp(36px, 6vw, 96px)/1.08 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
+    letter-spacing: .02em;
+    color:var(--neon-pink);
+    text-shadow: 0 0 10px var(--gold), 0 0 25px var(--gold-warm), 0 0 50px var(--gold), 0 0 90px var(--gold-warm);
+    white-space:nowrap;
+    pointer-events:none;
+    z-index:5;
+    mix-blend-mode:screen;
+  }
+  #hud{ position:absolute; left:10px; top:10px; z-index:6; color:#bff; font:600 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; text-shadow:0 0 6px #0ff; }
+  #hud .chip { display:inline-block; padding:6px 10px; border:1px solid rgba(0,255,255,.5); border-radius:999px; backdrop-filter: blur(6px); background: linear-gradient( to right, rgba(0,50,60,.35), rgba(0,20,30,.25) ); box-shadow:0 0 12px rgba(0,255,255,.25) inset; margin-right:8px; user-select:none; }
+  #hud .hint { display:block; opacity:.85; margin-top:6px; }
+  #bloom { position:absolute; inset:0; z-index:7; pointer-events:none; background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.15), rgba(255,255,255,0) 60%); opacity:0; mix-blend-mode:screen; transition: opacity .6s ease-out; }
+  #bloom.active { opacity:1; transition-duration: .15s; }
+
+  /* Start-/Pause-Overlay */
+  #gate { position:absolute; inset:0; z-index:8; display:none; place-items:center; background: radial-gradient(circle at 50% 50%, rgba(0,15,20,.7), rgba(0,0,0,.85)); backdrop-filter: blur(6px); }
+  #gate .panel { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 24px; border:1px solid rgba(0,255,255,.3); border-radius:16px; background:linear-gradient(180deg, rgba(0,40,50,.55), rgba(0,15,25,.55)); box-shadow:0 0 24px rgba(0,255,255,.2) inset, 0 0 32px rgba(255,200,0,.12); }
+  #gate .title { font:700 18px/1.2 ui-monospace,monospace; color:#aff; text-shadow:0 0 8px #0ff; letter-spacing: .02em; }
+  #gate .tip { font:500 12px/1.3 ui-monospace,monospace; color:#bff; opacity:.9; }
+  #startBtn { font:700 14px/1 ui-monospace,monospace; color:#012; padding:10px 14px; border-radius:999px; background:linear-gradient(90deg,#00f0ff,#00ffa0); border:none; box-shadow:0 0 12px rgba(0,255,200,.5), 0 0 24px rgba(255,220,0,.35); cursor:pointer; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="stars"  class="layer"></canvas>
+    <canvas id="matrix" class="layer"></canvas>
+    <canvas id="fx"     class="layer"></canvas>
+    <div id="shapes"></div>
+    <div id="hnoss" class="abs">Hnoss</div>
+    <div id="hud">
+      <span class="chip" id="mode">MODE: IDLE</span>
+      <span class="chip" id="power">POWER: 120%</span>
+      <span class="chip" id="pulse">PULSE: ready</span>
+      <span class="hint">Klick/Touch ⇒ NOVA ⚡ · Taste P ⇒ Power-Turbo · Space ⇒ Pause/Weiter</span>
+    </div>
+    <div id="bloom"></div>
+    <div id="gate" aria-hidden="true">
+      <div class="panel">
+        <div class="title">Energieschleuse geschlossen</div>
+        <button id="startBtn" type="button">Start · Öffnen</button>
+        <div class="tip">Enter starten · Space pausieren · „P“ Turbo</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // === DOM refs & constants ===
+  const stage = document.getElementById('stage');
+  const starsC = document.getElementById('stars');
+  const matrixC = document.getElementById('matrix');
+  const fxC = document.getElementById('fx');
+  const shapes = document.getElementById('shapes');
+  const hnoss = document.getElementById('hnoss');
+  const bloom = document.getElementById('bloom');
+  const hudPower = document.getElementById('power');
+  const hudPulse = document.getElementById('pulse');
+  const hudMode  = document.getElementById('mode');
+  const gate = document.getElementById('gate');
+  const startBtn = document.getElementById('startBtn');
+
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const rand = (a=1,b=0)=>Math.random()*(a-b)+b;
+  const TAU = Math.PI*2;
+
+  // === Runtime state (declare BEFORE any use) ===
+  let running=false, phase='idle'; // 'idle' | 'active' | 'paused'
+  let rafId=0;
+  let last = 0; // <-- FIX: define here; initialized in startLoop()
+
+  // === Sizing helpers ===
+  function sizeCanvas(c){ c.width = Math.floor(stage.clientWidth * DPR); c.height = Math.floor(stage.clientHeight * DPR); c.getContext('2d').setTransform(DPR,0,0,DPR,0,0); }
+
+  function setPhase(newPhase){ phase = newPhase; hudMode.textContent = 'MODE: ' + newPhase.toUpperCase(); }
+  function showGate(v){ gate.style.display = v? 'grid':'none'; gate.setAttribute('aria-hidden', v? 'false':'true'); }
+  function startLoop(){ if(running) return; running=true; last = performance.now(); rafId = requestAnimationFrame(loop); }
+  function stopLoop(){ if(!running) return; running=false; cancelAnimationFrame(rafId); rafId=0; }
+
+  function enterPaused(){ setPhase('paused'); showGate(true); hudPulse.textContent='PULSE: paused'; stopLoop(); }
+  function enterIdle(){ setPhase('idle'); showGate(false); hudPulse.textContent='PULSE: ready'; if(!running) startLoop(); }
+  function enterActive(){ setPhase('active'); showGate(false); if(!running) startLoop(); screenFlash(); }
+
+  // Respect motion preferences & URL toggles
+  const prefersReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const q = new URLSearchParams(location.search);
+  const startParam = (q.get('mode')||'').toLowerCase();
+  const forcePaused = q.get('paused')==='1' || q.get('autoplay')==='0' || startParam==='paused';
+  const forceActive = startParam==='active';
+
+  // === STARFIELD ===
+  const sctx = starsC.getContext('2d');
+  let stars = [];
+  function makeStars(){
+    const W = stage.clientWidth, H = stage.clientHeight;
+    const layers = [ {n:120, speed:0.04, size:[.6,1.6]}, {n:90, speed:0.08, size:[.8,2.0]}, {n:60, speed:0.14, size:[1.0,2.6]} ];
+    stars = [];
+    for(const L of layers){
+      for(let i=0;i<L.n;i++){
+        stars.push({ x: rand(W), y: rand(H), z: L.speed, r: rand(L.size[1], L.size[0]), b: rand(.45,.95), ph: rand(TAU), tw: rand(.8,1.6) });
+      }
+    }
+  }
+  function drawStars(t){
+    const W = stage.clientWidth, H = stage.clientHeight;
+    sctx.clearRect(0,0,W,H);
+    sctx.save(); sctx.globalCompositeOperation = 'lighter';
+    const driftScale = phase==='idle'? 0.65 : 1.0;
+    for(const s of stars){
+      s.x += s.z * 0.35 * driftScale; if(s.x>W) s.x-=W;
+      const tw = s.b + Math.sin(t*0.002*s.tw + s.ph)*0.35;
+      sctx.globalAlpha = Math.max(0, Math.min(1, tw));
+      sctx.beginPath(); sctx.arc(s.x, s.y, s.r, 0, TAU);
+      sctx.fillStyle = 'rgba(160,255,255,1)'; sctx.fill();
+    }
+    sctx.restore();
+  }
+
+  // === MATRIX RAIN ===
+  const mctx = matrixC.getContext('2d');
+  let drops = [], columns=0, fontSize=16, glyphs = [];
+  function setupMatrix(){
+    fontSize = Math.max(14, Math.round(stage.clientWidth/90));
+    mctx.font = fontSize + 'px ui-monospace, monospace';
+    columns = Math.floor(stage.clientWidth / fontSize);
+    drops = Array(columns).fill(rand(0, stage.clientHeight/fontSize|0));
+    const base=[]; for(let i=0;i<96;i++) base.push(String.fromCharCode(0x30A0 + i));
+    '0123456789-+/*#@%&'.split('').forEach(c=>base.push(c));
+    glyphs = base;
+  }
+  function drawMatrix(t){
+    const W = stage.clientWidth, H = stage.clientHeight;
+    mctx.fillStyle = 'rgba(0,0,0,0.06)';
+    mctx.fillRect(0,0,W,H);
+    const g = mctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, '#00ff88'); g.addColorStop(.5, '#00ffee'); g.addColorStop(1, '#00e0ff');
+    mctx.fillStyle = g;
+    const leadChance = phase==='idle'? 0.35 : 0.6;
+    for(let i=0;i<drops.length;i++){
+      const x = i * fontSize; const y = drops[i] * fontSize;
+      const ch = glyphs[(Math.random()*glyphs.length)|0];
+      mctx.globalAlpha = .75; mctx.fillText(ch, x, y);
+      if(Math.random()>leadChance){ mctx.globalAlpha = 1; mctx.fillStyle = '#eaffff'; mctx.fillText(ch, x, y - fontSize); mctx.fillStyle = g; }
+      if (y > H && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+  }
+
+  // === SHAPES ===
+  const animators = [];
+  function createHexPoints(size){ const pts=[], ang=TAU/6; for(let i=0;i<6;i++) pts.push([size + size*Math.cos(ang*i), size + size*Math.sin(ang*i)]); return pts.map(p=>p.join(',')).join(' '); }
+  function addHexagon(x,y,size){
+    const NS='http://www.w3.org/2000/svg'; const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','abs hex');
+    svg.style.left=(x-size)+'px'; svg.style.top=(y-size)+'px'; svg.setAttribute('width',size*2); svg.setAttribute('height',size*2); svg.setAttribute('viewBox',`0 0 ${size*2} ${size*2}`);
+    const poly=document.createElementNS(NS,'polygon'); poly.setAttribute('points', createHexPoints(size)); svg.appendChild(poly); shapes.appendChild(svg);
+    let rot=rand(360), sp=(.2+rand(.8))*(Math.random()<.5?-1:1);
+    return dt=>{ rot+=sp*dt*0.06; svg.style.transform=`rotate(${rot}deg)`; };
+  }
+  function addCrystal(x,y,size){
+    const NS='http://www.w3.org/2000/svg'; const svg=document.createElementNS(NS,'svg');
+    svg.setAttribute('class','abs crystal'); svg.style.left=(x-size)+'px'; svg.style.top=(y-size)+'px';
+    svg.setAttribute('width',size*2); svg.setAttribute('height',size*2); svg.setAttribute('viewBox',`0 0 ${size*2} ${size*2}`);
+    const r=document.createElementNS(NS,'rect'); r.setAttribute('x',0); r.setAttribute('y',0); r.setAttribute('width',size*2); r.setAttribute('height',size*2);
+    const l1=document.createElementNS(NS,'line'); l1.setAttribute('x1',0); l1.setAttribute('y1',0); l1.setAttribute('x2',size*2); l1.setAttribute('y2',size*2);
+    const l2=document.createElementNS(NS,'line'); l2.setAttribute('x1',size*2); l2.setAttribute('y1',0); l2.setAttribute('x2',0); l2.setAttribute('y2',size*2);
+    svg.append(r,l1,l2); shapes.appendChild(svg);
+    let p = rand(TAU), sp = .8+rand(.8);
+    return dt=>{ p+=sp*dt*0.003; svg.style.opacity = (0.35 + 0.65*Math.abs(Math.sin(p))).toFixed(3); };
+  }
+  function seedShapes(){ shapes.innerHTML=''; animators.length=0; const W=stage.clientWidth, H=stage.clientHeight; for(let i=0;i<24;i++) animators.push(addHexagon(rand(W), rand(H), 18+rand(44))); for(let i=0;i<36;i++) animators.push(addCrystal(rand(W), rand(H), 8+rand(18))); }
+
+  // === FX ===
+  const fctx = fxC.getContext('2d');
+  let waves=[], sparks=[], power=1.2, turbo=false, pulseReady=true, lastPulse=0;
+  function shockwave(x,y, scale=1){ waves.push({x,y, r:6, life:1.0, grow: 2.6*scale}); }
+  function nova(x,y){ for(let i=0;i<160;i++) sparks.push({x,y, vx:Math.cos(i/12)*rand(2.6, .4), vy:Math.sin(i/12)*rand(2.6, .4), life:1, size:rand(1.6,.6)}); shockwave(x,y,2.2); screenFlash(); }
+  function screenFlash(){ bloom.classList.add('active'); requestAnimationFrame(()=>{ bloom.classList.remove('active'); }); }
+  function emitSparks(x,y){ const n = phase==='idle' ? 2 : (turbo? 10: 6); for(let i=0;i<n;i++) sparks.push({ x:x+rand(6,-6), y:y+rand(6,-6), vx:rand(1.2,-1.2), vy:rand(1.2,-1.2), life: rand(.8,.35), size: rand(1.2,.5) }); }
+  function drawFX(dt, t, hx, hy){
+    const W = stage.clientWidth, H = stage.clientHeight;
+    fctx.clearRect(0,0,W,H);
+    const baseR = 110 + Math.sin(t*0.003)*26; const r = baseR * (phase==='idle'?0.9:1.0) * (turbo?1.3:1);
+    const grad = fctx.createRadialGradient(hx, hy, 0, hx, hy, r);
+    grad.addColorStop(0, 'rgba(255,215,0,.35)'); grad.addColorStop(.6,'rgba(255,165,0,.20)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    fctx.fillStyle = grad; fctx.fillRect(0,0,W,H);
+    fctx.save(); fctx.globalCompositeOperation='lighter';
+    for(let i=waves.length-1;i>=0;i--){ const w=waves[i];
+      w.r += (60 + power*40) * (dt/1000) * w.grow; w.life -= (dt/1000)*0.8;
+      if(w.life<=0 || w.r>Math.max(W,H)*1.1){ waves.splice(i,1); continue; }
+      fctx.globalAlpha = Math.max(0, w.life);
+      fctx.lineWidth = 2.5; fctx.strokeStyle = 'rgba(255,255,255,.8)';
+      fctx.beginPath(); fctx.arc(w.x, w.y, w.r, 0, TAU); fctx.stroke();
+    }
+    for(let i=sparks.length-1;i>=0;i--){ const p=sparks[i];
+      p.x += p.vx * (turbo?1.8:1.2); p.y += p.vy * (turbo?1.8:1.2); p.vx*=0.985; p.vy*=0.985; p.life -= (dt/1000) * .9;
+      if(p.life<=0){ sparks.splice(i,1); continue; }
+      fctx.globalAlpha = Math.max(0, p.life);
+      fctx.beginPath(); fctx.arc(p.x, p.y, p.size, 0, TAU); fctx.fillStyle = 'rgba(255,255,255,.9)'; fctx.fill();
+    }
+    fctx.restore();
+    const sweep = (t*0.02) % 360;
+    fctx.save(); fctx.translate(hx, hy); fctx.rotate((sweep*Math.PI)/180);
+    const grd = fctx.createLinearGradient(0,0,260,0);
+    grd.addColorStop(0, 'rgba(255,255,255,.24)'); grd.addColorStop(.4,'rgba(255,255,255,.06)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    fctx.fillStyle = grd; fctx.fillRect(0,-2,260,4);
+    fctx.restore();
+    if(pulseReady && t-lastPulse>1600){ shockwave(hx,hy,1.2); lastPulse=t; pulseReady=false; setTimeout(()=>{ pulseReady=true; hudPulse.textContent='PULSE: ready'; }, 1100); hudPulse.textContent='PULSE: charging'; }
+    emitSparks(hx,hy);
+  }
+
+  // === Hnoss motion ===
+  let tt=0;
+  function moveHnoss(dt){
+    tt += dt*0.00025 * (phase==='idle'?0.8:1) * (turbo?1.15:1);
+    const W=stage.clientWidth, H=stage.clientHeight;
+    const ax = 0.5 + 0.45*Math.sin(tt*2.0);
+    const ay = 0.35 + 0.55*Math.sin(tt*1.3 + Math.PI/3);
+    const x = ax * W, y = ay * H;
+    const rect = hnoss.getBoundingClientRect();
+    hnoss.style.transform = `translate(${(x - rect.width/2).toFixed(2)}px, ${(y - rect.height/2).toFixed(2)}px)`;
+    return {x,y};
+  }
+
+  // === Seeding ===
+  function seedScene(){ makeStars(); setupMatrix(); seedShapes(); }
+
+  // === Resize wiring ===
+  function resize(){ [starsC, matrixC, fxC].forEach(sizeCanvas); seedScene(); }
+  window.addEventListener('resize', resize, { passive:true });
+
+  // === Interaction ===
+  stage.addEventListener('pointerdown', (e)=>{
+    const rect = stage.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if(phase!=='active') enterActive();
+    nova(x,y);
+  });
+  startBtn.addEventListener('click', ()=>{ enterActive(); });
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='p' || e.key==='P'){
+      turbo = !turbo; power = turbo? 2.0 : 1.2; hudPower.textContent = `POWER: ${turbo? '200%':'120%'}`; screenFlash();
+    } else if(e.key===' '){ // Space toggles pause
+      if(running){ enterPaused(); } else { (phase==='active')? enterActive(): enterIdle(); }
+    } else if(e.key==='Enter'){
+      if(phase!=='active') enterActive();
+    }
+  });
+
+  // Pause when tab hidden, resume if not explicitly paused
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){ stopLoop(); }
+    else { if(phase!=='paused') startLoop(); }
+  });
+
+  // === Test helpers (simple runtime checks) ===
+  function runSelfTests(){
+    const results = [];
+    function t(name, fn){ try{ fn(); results.push({name, ok:true}); } catch(err){ results.push({name, ok:false, err}); } }
+    t('stars initialized', ()=>{ console.assert(Array.isArray(stars) && stars.length>0, 'stars not initialized'); });
+    t('drawStars safe', ()=>{ drawStars(performance.now()); });
+    t('matrix drops sized', ()=>{ console.assert(drops.length===columns && columns>0, `drops=${drops.length}, columns=${columns}`); });
+    t('animators seeded', ()=>{ console.assert(animators.length>0, 'animators empty'); });
+    t('fx defaults', ()=>{ console.assert(turbo===false && power===1.2, 'fx defaults wrong'); });
+    // NEW: gating transitions
+    t('phase transitions', ()=>{
+      enterPaused(); console.assert(!running && phase==='paused', 'enterPaused failed');
+      enterIdle();   console.assert(running && phase==='idle', 'enterIdle failed');
+      enterActive(); console.assert(running && phase==='active', 'enterActive failed');
+    });
+    // NEW: timing base "last" is initialized and dt positive
+    t('timing/last initialized', ()=>{ stopLoop(); last = undefined; startLoop(); console.assert(Number.isFinite(last), '`last` not initialized'); const prev = last; loop(prev + 16.6); console.assert(last > prev, 'dt did not advance'); });
+    // re-run seeding to ensure idempotence
+    t('resize reseeds cleanly', ()=>{ resize(); console.assert(stars.length>0 && drops.length===columns, 'reseeding failed'); });
+    const ok = results.every(r=>r.ok);
+    console.groupCollapsed(`SelfTests: ${ok? 'PASS':'FAIL'} (${results.filter(r=>!r.ok).length} failing)`);
+    for(const r of results){ if(r.ok){ console.log('✔', r.name); } else { console.error('✘', r.name, r.err); } }
+    console.groupEnd();
+  }
+
+  // === Boot ===
+  resize(); // canvases sized + scene seeded
+  if(forcePaused || prefersReduce){ enterPaused(); }
+  else if(forceActive){ enterActive(); }
+  else { enterIdle(); }
+  runSelfTests();
+
+  // === Main Loop ===
+  function loop(now){
+    if(!running) return; // safety
+    const dt = now - last; last = now;
+    const pos = moveHnoss(dt);
+    drawStars(now);
+    drawMatrix(now);
+    for(const a of animators) a(dt);
+    drawFX(dt, now, pos.x, pos.y);
+    rafId = requestAnimationFrame(loop);
+  }
+})();
+</script>
+</body>
+</html>
